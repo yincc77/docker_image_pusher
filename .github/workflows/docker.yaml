@@ -126,10 +126,13 @@ jobs:
             scan_image=$(echo "$line" | awk '{print $NF}')
             report_name=$(echo "$scan_image" | tr '/:@' '___')
             # 失败时把 trivy 自己的报错留进 .err（否则只看到"trivy failed"什么都查不了）
-            if ! trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --format table --output "trivy-reports/${report_name}.txt" "$scan_image" 2> "trivy-reports/${report_name}.err"; then
+            # 用 root 跑：/var/lib/docker 本身是 root:root 0710，runner 用户进不去它下面的目录（第三次失败：mkdir …/trivy-tmp/…: permission denied）
+            TRIVY="sudo -E env PATH=$PATH TRIVY_CACHE_DIR=$TRIVY_CACHE_DIR TMPDIR=$TMPDIR trivy"
+            if ! $TRIVY image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --format table --output "trivy-reports/${report_name}.txt" "$scan_image" 2> "trivy-reports/${report_name}.err"; then
               echo "trivy failed for $scan_image (see ${report_name}.err)" > "trivy-reports/${report_name}.txt"; tail -20 "trivy-reports/${report_name}.err"
             fi
-            trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --format json --output "trivy-reports/${report_name}.json" "$scan_image" 2>>"trivy-reports/${report_name}.err" || true
+            $TRIVY image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --format json --output "trivy-reports/${report_name}.json" "$scan_image" 2>>"trivy-reports/${report_name}.err" || true
+            sudo chown -R "$(id -u):$(id -g)" trivy-reports
             df -h / /var/lib/docker | tail -2
             {
               echo "## trivy: $scan_image (HIGH/CRITICAL, fixed-only)"
