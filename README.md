@@ -78,3 +78,13 @@ xiaoyaliu/alist
 修改/.github/workflows/docker.yaml文件
 添加 schedule即可定时执行(此处cron使用UTC时区)
 ![](doc/定时执行.png)
+
+---
+
+## 本 fork 在自建集群里的用法（2026-09-04 起）
+
+- 用途：把 docker.io / ghcr 等公网镜像搬到阿里云 ACR（命名空间 `yincc`），再由集群侧 `crane copy` 进 Harbor。完整流程与命名规则见 infra-configs 仓 `harbor-helm/镜像搬运流程.md`。
+- 触发：改 `images.txt` 推 `main`。amd64 集群请带 `--platform linux/amd64`（目标名会带 `linux_amd64_` 前缀）。
+- 漏扫：工作流内置 trivy（HIGH/CRITICAL、只列有修复版、不阻断推送）；报告在运行页 Step Summary，产物 `trivy-reports` 保留 30 天：`gh run download <run-id> -n trivy-reports -D <dir>`。
+- 工作流里三处"为什么这样写"的注释（`root-reserve-mb: 10240`、trivy 缓存/临时目录在大盘、以 root 运行）都是踩坑后加的，改动前先看注释。
+- 常见失败：Docker Hub 上没有该 tag（`manifest unknown`）——先核实 tag 存在。
