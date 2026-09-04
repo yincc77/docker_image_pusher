@@ -1,1 +1,1 @@
---platform linux/amd64 unleashorg/unleash-server:7.5.2
+--platform linux/amd64 unleashorg/unleash-server:8.1.0
