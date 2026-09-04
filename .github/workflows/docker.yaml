@@ -30,7 +30,7 @@ jobs:
       uses: easimon/maximize-build-space@master
       with:
 
-        root-reserve-mb: 6144   # 2026-09-04：2048 时 runner 在 Install trivy 一步报 "No space left on device"（根盘只剩给 runner 自身日志的余量）
+        root-reserve-mb: 10240  # 2026-09-04：2048 时 runner 在 Install trivy 一步报 "No space left on device"；6144 时根盘仍 100%（trivy 扫描要在临时目录落镜像 tar）
         swap-size-mb: 128
         remove-dotnet: 'true'
         remove-haskell: 'true'
@@ -64,6 +64,9 @@ jobs:
         # 漏洞库缓存放到扩容后的大盘（/var/lib/docker 由 maximize-build-space 挂载），别占根盘
         sudo mkdir -p /var/lib/docker/trivy-cache && sudo chown "$(id -u):$(id -g)" /var/lib/docker/trivy-cache
         echo "TRIVY_CACHE_DIR=/var/lib/docker/trivy-cache" >> "$GITHUB_ENV"
+        # trivy 扫 docker 守护进程里的镜像时会把镜像 tar 落到 TMPDIR（默认 /tmp 在根盘）——也放大盘
+        sudo mkdir -p /var/lib/docker/trivy-tmp && sudo chown "$(id -u):$(id -g)" /var/lib/docker/trivy-tmp
+        echo "TMPDIR=/var/lib/docker/trivy-tmp" >> "$GITHUB_ENV"
         df -hT / /var/lib/docker
 
     - name: Build and push image Aliyun
@@ -122,8 +125,12 @@ jobs:
             # ---- trivy 漏扫（不影响后续 tag/push）----
             scan_image=$(echo "$line" | awk '{print $NF}')
             report_name=$(echo "$scan_image" | tr '/:@' '___')
-            trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --format table --output "trivy-reports/${report_name}.txt" "$scan_image" || echo "trivy failed for $scan_image" > "trivy-reports/${report_name}.txt"
-            trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --format json --output "trivy-reports/${report_name}.json" "$scan_image" || true
+            # 失败时把 trivy 自己的报错留进 .err（否则只看到"trivy failed"什么都查不了）
+            if ! trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --format table --output "trivy-reports/${report_name}.txt" "$scan_image" 2> "trivy-reports/${report_name}.err"; then
+              echo "trivy failed for $scan_image (see ${report_name}.err)" > "trivy-reports/${report_name}.txt"; tail -20 "trivy-reports/${report_name}.err"
+            fi
+            trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --format json --output "trivy-reports/${report_name}.json" "$scan_image" 2>>"trivy-reports/${report_name}.err" || true
+            df -h / /var/lib/docker | tail -2
             {
               echo "## trivy: $scan_image (HIGH/CRITICAL, fixed-only)"
               echo '```'
