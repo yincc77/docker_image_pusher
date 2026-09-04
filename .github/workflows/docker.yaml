@@ -55,6 +55,13 @@ jobs:
     - name: Docker Setup Buildx
       uses: docker/setup-buildx-action@v3
 
+    # 漏洞扫描：每个镜像 pull 后跑 trivy（HIGH/CRITICAL），报告进 Step Summary 并作为产物上传；不阻断推送（结果由使用方在台账里逐 CVE 处置）
+    - name: Install trivy
+      run: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+        trivy --version
+        mkdir -p trivy-reports
+
     - name: Build and push image Aliyun
       run: |
         docker login -u $ALIYUN_REGISTRY_USER -p $ALIYUN_REGISTRY_PASSWORD $ALIYUN_REGISTRY
@@ -108,6 +115,17 @@ jobs:
         
             echo "docker pull $line"
             docker pull $line
+            # ---- trivy 漏扫（不影响后续 tag/push）----
+            scan_image=$(echo "$line" | awk '{print $NF}')
+            report_name=$(echo "$scan_image" | tr '/:@' '___')
+            trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --format table --output "trivy-reports/${report_name}.txt" "$scan_image" || echo "trivy failed for $scan_image" > "trivy-reports/${report_name}.txt"
+            trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 --format json --output "trivy-reports/${report_name}.json" "$scan_image" || true
+            {
+              echo "## trivy: $scan_image (HIGH/CRITICAL, fixed-only)"
+              echo '```'
+              head -80 "trivy-reports/${report_name}.txt"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
             platform=$(echo "$line" | awk -F'--platform[ =]' '{if (NF>1) print $2}' | awk '{print $1}')
             echo "platform is $platform"
             # 如果存在架构信息 将架构信息拼到镜像名称前面
@@ -155,3 +173,12 @@ jobs:
             echo "=============================================================================="     
             
         done < images.txt
+
+    - name: Upload trivy reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: trivy-reports
+        path: trivy-reports/
+        if-no-files-found: warn
+        retention-days: 30
