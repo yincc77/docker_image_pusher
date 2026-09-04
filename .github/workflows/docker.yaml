@@ -30,7 +30,7 @@ jobs:
       uses: easimon/maximize-build-space@master
       with:
 
-        root-reserve-mb: 2048
+        root-reserve-mb: 6144   # 2026-09-04：2048 时 runner 在 Install trivy 一步报 "No space left on device"（根盘只剩给 runner 自身日志的余量）
         swap-size-mb: 128
         remove-dotnet: 'true'
         remove-haskell: 'true'
@@ -61,6 +61,10 @@ jobs:
         curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
         trivy --version
         mkdir -p trivy-reports
+        # 漏洞库缓存放到扩容后的大盘（/var/lib/docker 由 maximize-build-space 挂载），别占根盘
+        sudo mkdir -p /var/lib/docker/trivy-cache && sudo chown "$(id -u):$(id -g)" /var/lib/docker/trivy-cache
+        echo "TRIVY_CACHE_DIR=/var/lib/docker/trivy-cache" >> "$GITHUB_ENV"
+        df -hT / /var/lib/docker
 
     - name: Build and push image Aliyun
       run: |
