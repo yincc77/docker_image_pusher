@@ -1,1 +1,1 @@
---platform linux/amd64 unleashorg/unleash-server:8.1.0
+--platform linux/amd64 python:3.11-alpine
