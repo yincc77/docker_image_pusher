@@ -1,1 +1,1 @@
---platform linux/amd64 alpine:3.20
+--platform linux/amd64 snowdreamtech/frpc:0.61.1
