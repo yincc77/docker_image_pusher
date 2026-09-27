@@ -1,1 +1,1 @@
---platform linux/amd64 snowdreamtech/frpc:0.61.1
+--platform linux/amd64 provectuslabs/kafka-ui:v0.7.2
